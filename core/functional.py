@@ -17,6 +17,14 @@ def sigmoid(x: Tensor) -> Tensor:
     Sigmoid(x)=1/(1+e^(-x))
     反向：dL/dx = sigmoid(x)*(1-sigmoid(x))
     """
+    # L 最终损失标量
+    # ∂L/∂out = out.grad
+    # ∂L/∂x = x.grad 
+    # ∂L/∂y = other.grad
+    # ∂out/∂x 使用numpy广播实现
+    # out = sigmoid(x)
+    # ∂L/∂x = ∂L/∂out *∂out/∂x = out.grad * sigmoid(x)*(1-sigmoid(x))
+
     out_data = 1/(1+np.exp(-x.data))
     out = Tensor(out_data, requires_grad=True)
     def _backward():
@@ -32,6 +40,8 @@ def tanh(x: Tensor) -> Tensor:
     """
     out_data = (np.exp(x.data)-np.exp(-x.data))/(np.exp(x.data)+np.exp(-x.data))
     out = Tensor(out_data, requires_grad=True)
+    # out = tanh(x)
+    # ∂L/∂x = ∂L/∂out *∂out/∂x = out.grad * (1-tanh^2(x))
     def _backward():
         if x.grad is not None:
             x.grad += out.grad * (1-out_data*out_data)
@@ -58,6 +68,11 @@ def softmax(x: Tensor, axis=-1) -> Tensor:
     sum_exp = exp_x.sum(axis=axis, keepdims=True)      # 你得实现 x.sum
     out = exp_x / sum_exp                              # broadcast 除法
 
+    # out = softmax(x)
+    # ∂L/∂x = ∂L/∂out *∂out/∂x
+    # ∂L/∂x[i] = ∂L/∂out *∂out/∂x[i] =  Σ_j ∂L/∂out[j] · s[j](δ_{ij} − s[i])
+    # = s[i] · (∂L/∂out[i] − Σ_j ∂L/∂out[j] · s[j])
+
     # 4. 链式回调：反向公式
     def _backward():
         if x.grad is not None:
@@ -72,7 +87,27 @@ def softmax(x: Tensor, axis=-1) -> Tensor:
     out._parents = [x]
     return out
 
-def log_softmax(x: Tensor, axis=-1) -> Tensor: ...
+def log_softmax(x: Tensor, axis=-1) -> Tensor:
+    # log_softmax(xᵢ) = ln(exp(xᵢ) / Σⱼ exp(xⱼ)) = xᵢ − ln(Σⱼ exp(xⱼ))
+    # 数值稳定，减去最大值
+    max_val = x.max(axis=axis, keepdims = True)
+    x_stable = x - max_val
+    # 指数+求和
+    exp_x = x_stable.exp()
+    sum_exp = exp_x.sum(axis = axis, keepdims = True)
+    # ln(softmax) = x − ln(sum_exp)
+    log_sum_exp = sum_exp.log() #补充tensor的log函数
+    out = x_stable - log_sum_exp #需要使用广播减法
+    # ∂L/∂x = ∂L/∂y ⊙ (1 − exp(y))  (y = log_softmax(x))
+    def _backward():
+        if x.grad is not None:
+            grad_out = out.grad
+            local_grad = 1.0 - out.data.exp() 
+            x.grad =+ grad_out * local_grad # 使用广播乘法
+    out._backward = _backward
+    out._parents = [x]
+
+    return out
 
 # ===== 损失 =====
 def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor: ...
