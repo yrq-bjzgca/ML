@@ -14,6 +14,7 @@ class Tensor:
             self.grad = np.zeros_like(self.data)
         self._backward = lambda: None #反向函数
         self._parents = [] #计算图父亲
+        
     # ---------- 工具 ----------
     def __repr__(self):
         return f"Tensor({self.data}, shape={self.shape}, requires_grad={self.grad is not None})"
@@ -24,32 +25,50 @@ class Tensor:
         return self.grad is not None
 
     # 优化后的轴计算（__add__ 和 __mul__ 中均适用）
+    # def get_broadcast_axes(self, grad_shape, target_shape):
+    #     """计算广播新增的轴（需求和的轴）"""
+    #     grad_ndim = len(grad_shape)
+    #     target_ndim = len(target_shape)
+    #     max_ndim = max(grad_ndim, target_ndim)
+
+    #     # 补1使两者维度数一致（便于逐位）
+    #     grad_shape_padded = (1,) * (max_ndim - grad_ndim) + grad_shape
+    #     target_shape_padded = (1,) * (max_ndim - target_ndim) + target_shape
+        
+    #     # if grad_ndim > target_ndim:
+    #     #     return tuple(range(grad_ndim - target_ndim))
+    #     # if grad_ndim < target_ndim:
+    #     #     return tuple(range(grad_ndim, target_ndim))
+    #     # if grad_ndim == target_ndim:
+    #     #     return ()
+    #     # 新增的轴是 grad 比 target 多的前 N 个轴
+    #     # return tuple(range(grad_ndim - target_ndim))
+
+    #     axes = []
+    #     for i in range(max_ndim):
+    #         g = grad_shape_padded[i]
+    #         t = target_shape_padded[i]
+    #         # 若梯度在该轴的尺寸 > 目标尺寸，且目标尺寸为1（说明是广播扩展的轴）
+    #         if g > t and t == 1:
+    #             axes.append(i)
+    #     return tuple(axes)
+
     def get_broadcast_axes(self, grad_shape, target_shape):
-        """计算广播新增的轴（需求和的轴）"""
+        # 计算广播轴
         grad_ndim = len(grad_shape)
         target_ndim = len(target_shape)
-        max_ndim = max(grad_ndim, target_ndim)
 
-        # 补1使两者维度数一致（便于逐位）
-        grad_shape_padded = (1,) * (max_ndim - grad_ndim) + grad_shape
-        target_shape_padded = (1,) * (max_ndim - target_ndim) + target_shape
-        
-        # if grad_ndim > target_ndim:
-        #     return tuple(range(grad_ndim - target_ndim))
-        # if grad_ndim < target_ndim:
-        #     return tuple(range(grad_ndim, target_ndim))
-        # if grad_ndim == target_ndim:
-        #     return ()
-        # 新增的轴是 grad 比 target 多的前 N 个轴
-        # return tuple(range(grad_ndim - target_ndim))
-
+        # 处理维度不一致的情况
+        if grad_ndim > target_ndim:
+            return tuple(range(grad_ndim - target_ndim))
         axes = []
-        for i in range(max_ndim):
-            g = grad_shape_padded[i]
-            t = target_shape_padded[i]
-            # 若梯度在该轴的尺寸 > 目标尺寸，且目标尺寸为1（说明是广播扩展的轴）
-            if g > t and t == 1:
-                axes.append(i)
+
+        # 从右向左广播
+        for i in range(1,min(grad_ndim, target_ndim)+1):
+            grad_dim = grad_shape[-i]
+            target_dim = target_shape[-i]
+            if grad_dim != target_dim and target_dim ==1:
+                axes.append(grad_dim - i)
         return tuple(axes)
 
     def __add__(self, other:'Tensor')->'Tensor':
@@ -76,21 +95,51 @@ class Tensor:
                     self.grad = np.zeros_like(self.data)
                 #计算广播轴求和
                 axes = self.get_broadcast_axes(out.grad.shape, self.shape)
+                if axes:
+                    summed_grad = out.grad.sum(axis =axes, keepdims =True)
+                    if summed_grad.shape!=self.shape:
+                        # 尝试reshape到目标形状
+                        try:
+                            reshaped_grad = summed_grad.reshape(self.shape)
+                            self.grad += reshaped_grad
+                        except ValueError:
+                            self.grad += np.broadcast_to(summed_grad, self.shape)
+                    else:
+                        self.grad += summed_grad
+                else:
+                    #没有需要相加的和
+                    self.grad += out.grad
                 # self.grad += out.grad.sum(axis=axes).reshape(self.shape)
-                summed_grad = out.grad.sum(axis =axes, keepdims =True)
-                self.grad += np.broadcast_to(summed_grad,self.shape)
+              
+                # self.grad += np.broadcast_to(summed_grad,self.shape)
             
             if other.requires_grad:
                 if other.grad is None:
                     # grad_broadcast = out.
                     other.grad = np.zeros_like(other.data)
+                # 计算广播轴求和
+                axes = self.get_broadcast_axes(out.grad.shape, other.shape)
+                if axes:
+                    summed_grad = out.grad.sum(axis =axes, keepdims =True)
+                    if summed_grad.shape!=other.shape:
+                        # 尝试reshape到目标形状
+                        try:
+                            reshaped_grad = summed_grad.reshape(other.shape)
+                            other.grad += reshaped_grad
+                        except ValueError:
+                            other.grad += np.broadcast_to(summed_grad, other.shape)
+                    else:
+                        other.grad += summed_grad
+                else:
+                    #没有需要相加的和
+                    other.grad += out.grad
 
                 # axis = tuple(range(grad_broadcast.ndim - other.ndim))
                 # other.grad += grad_broadcast.sum(axis=axis).reshape(self.shape)
-                axes = self.get_broadcast_axes(out.grad.shape, other.shape)
+                # axes = self.get_broadcast_axes(out.grad.shape, other.shape)
                 # other.grad += out.grad.sum(axis =axes).reshape(other.shape)
-                summed_grad = out.grad.sum(axis =axes, keepdims =True)
-                other.grad += np.broadcast_to(summed_grad, other.shape)
+                # summed_grad = out.grad.sum(axis =axes, keepdims =True)
+                # other.grad += np.broadcast_to(summed_grad, other.shape)
         out._backward = _backward
         out._parents = [self, other]
         return out
@@ -141,23 +190,101 @@ class Tensor:
                     self.grad = np.zeros_like(self.data)
                 grad_broad = out.grad * b
                 axes = self.get_broadcast_axes(grad_broad.shape, self.shape)
+                if axes:
+                    summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                    if summed_grad.shape!=self.shape:
+                        # 尝试reshape到目标形状
+                        try:
+                            reshaped_grad = summed_grad.reshape(self.shape)
+                            self.grad += reshaped_grad
+                        except ValueError:
+                            self.grad += np.broadcast_to(summed_grad, self.shape)
+                    else:
+                        self.grad += summed_grad
+                else:
+                    #没有需要相加的和
+                    self.grad += grad_broad
                 # self.grad += grad_broad.sum(axis=axis).reshape(self.shape)
-                summed_grad = grad_broad.sum(axis =axes, keepdims =True)
-                self.grad += np.broadcast_to(summed_grad, self.shape)
+                # summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                # self.grad += np.broadcast_to(summed_grad, self.shape)
             if other.requires_grad:
                 if other.grad is None:
                     other.grad = np.zeros_like(other.data)
                 grad_broad = out.grad * a
                 axes = self.get_broadcast_axes(grad_broad.shape, other.shape)
+                if axes:
+                    summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                    if summed_grad.shape!=other.shape:
+                        # 尝试reshape到目标形状
+                        try:
+                            reshaped_grad = summed_grad.reshape(other.shape)
+                            other.grad += reshaped_grad
+                        except ValueError:
+                            other.grad += np.broadcast_to(summed_grad, other.shape)
+                    else:
+                        other.grad += summed_grad
+                else:
+                        other.grad += grad_broad
                 # other.grad += grad_broad.sum(axis=axis).reshape(other.shape)
-                summed_grad = grad_broad.sum(axis =axes, keepdims =True)
-                other.grad += np.broadcast_to(summed_grad, other.shape)                
+                # summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                # other.grad += np.broadcast_to(summed_grad, other.shape)                
 
         out._backward = _backward
         out._parents = [self, other]
         return out
 
+    def __pow__(self, other:'Tensor')->'Tensor':
+        """
+        重载 ** 运算符
+        目前支持：
+            - self 为任意张量
+            - other 为常数或 0-D/1-D 常量张量（广播）
+        反向：
+            ∂L/∂x = ∂L/∂out * other * x^(other-1)
+            ∂L/∂y = ∂L/∂out * x^y * log(x)   （y 为张量时才需要）
+        """
+        other = other if isinstance(other, Tensor) else Tensor(other,requires_grad=False)
+        out_data = np.pow(self.data,other.data)
+        out = Tensor(out_data, requires_grad= (self.requires_grad or other.requires_grad))
+        def _backward():
+            if self.requires_grad:
 
+                grad_self = out.grad * other.data * np.pow(self.data,other.data-1) 
+                if grad_self.shape != self.shape:
+                    axes = self.get_broadcast_axes(grad_self.shape, self.shape)
+                    grad_self = grad_self.sum(axis=axes, keepdims=True)
+                    grad_self = np.broadcast_to(grad_self, self.shape)
+                if self.grad is None:
+                    self.grad = np.zeros_like(self.data)
+
+                # summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                # self.grad += np.broadcast_to(summed_grad, self.grad_broad)
+                self.grad += grad_self
+
+            if other.requires_grad:   
+                grad_other = out.grad * other.data * np.log(self.data + 1e-12)# 防止log(0)
+                if grad_other.shape != other.shape:
+                    axes = self.get_broadcast_axes(grad_other.shape, other.shape)
+                    grad_other = grad_self.sum(axis=axes, keepdims=True)
+                    grad_other = np.broadcast_to(grad_other, other.shape)   
+                if other.grad is None:
+                    other.grad = np.zeros_like(other.data)
+                # grad_broad = out.grad * other.data * np.pow(self.data,other.data-1) 
+                # axes = self.get_broadcast_axes(grad_broad.shape, other.shape)
+                # summed_grad = grad_broad.sum(axis =axes, keepdims =True)
+                # other.grad += np.broadcast_to(summed_grad, other.grad_broad)
+                    other.grad += grad_other
+
+        out._backward = _backward
+        out._parents = [self, other]
+        return out
+
+    def square(self):
+        """
+        对self**2 的有好的接口
+        """
+        return self**2
+    
     # 除法
     def __truediv__(self, other:'Tensor')->'Tensor':
         other  = other if isinstance(other,Tensor) else Tensor(other, requires_grad=False)
@@ -171,6 +298,9 @@ class Tensor:
                 grad_broad = out.grad/b
                 axes = self.get_broadcast_axes(grad_broad.shape, self.shape)
                 self.grad += grad_broad.sum(axis=axes).reshape(self.shape)
+                # summed_grad = grad_broad.sum(axis=axes, keepdims=True)
+                # self.grad += np.broadcast_to(summed_grad, self.shape)
+
             if other.requires_grad:
                 if other.grad is None:
                     other.grad = np.zeros_like(other.data)
@@ -178,6 +308,9 @@ class Tensor:
                 grad_broad = -out.grad*a/(b**2+1e-12)
                 axes = self.get_broadcast_axes(grad_broad.shape, other.shape)
                 other.grad += grad_broad.sum(axis=axes).reshape(other.shape)
+                # summed_grad = grad_broad.sum(axis=axes, keepdims=True)
+                # other.grad += np.broadcast_to(summed_grad, other.shape)
+               
 
         out._backward = _backeard
         out._parents = [self, other]
@@ -268,7 +401,8 @@ class Tensor:
                     grad_reshape = out.grad
                 else:
                     if current_axis  is None:
-                        grad_reshape = np.expand_dims(out.grad, axis=tuple(range(self.ndim)))
+                        grad_reshape = np.reshape(out.grad, (1,) * self.ndim)
+                        # grad_reshape = np.expand_dims(out.grad, axis=tuple(range(self.ndim)))
                     else:
                         # if isinstance(axes,int):
                         #     axes = (current_axis ,)
@@ -287,15 +421,30 @@ class Tensor:
         out_data = np.mean(self.data, axis = axis, keepdims = keepdims)
         out = Tensor(out_data, requires_grad=self.requires_grad)
         def _backward():
-            if self.requires_grad and self.grad is not None:
+            if self.requires_grad:
+                if self.grad is None:
+                    self.grad = np.zeros_like(self.data) 
                 # n = self.data.size // out_data.size #降维轴上的元素数目
                 # grad_broadcast = np.broadcast_to(out_data,self.shape)/n
                 # self.grad += grad_broadcast
                 if axis is None:
                     count = self.data.size
                 else:
-                   
-                    count = self.data.shape[axis] if isinstance(axis, int) else np.prod([self.data.shape[ax] for ax in axis])
+                    if  isinstance(axis, int):
+                        count = self.data.shape[axis]
+                    else:
+                        count = np.prod([self.data.shape[ax] for ax in axis])  
+                    if keepdims:
+                        grad_expanded = out.grad
+                    else:
+                        if axis is None:
+                            grad_expanded = np.reshape(out.grad, (1,)*self.ndim)
+                        else:
+                            axes = (axis,) if isinstance(axis,int) else axis
+                            grad_expanded = out.grad
+                            for ax in sorted(axes):
+                                grad_expanded = np.expand_dims(grad_expanded, axis=ax)
+                    # count = self.data.shape[axis] if isinstance(axis, int) else np.prod([self.data.shape[ax] for ax in axis])
                 grad_board = np.broadcast_to(out.grad, self.shape)/count
                 self.grad += grad_board
         out._backward = _backward
@@ -355,6 +504,7 @@ class Tensor:
     #     out._backward = _backward
     #     out._parents = [self]
     #     return out
+
 
     # 支持多轴交换
     def transpose(self,*axes)->'Tensor':
@@ -447,99 +597,127 @@ class Tensor:
                     self.grad = np.zeros_like(self.data)
                 
                 grad_mask = np.zeros_like(self.data)
-                # 确保out.grad与argmax_val形状兼容（广播对齐）
-                out_grad_broad = np.broadcast_to(out.grad, argmax_val.shape)
                 
                 if current_axis is None:
-                    # 全局最大值：argmax是标量，out.grad是标量
+                    # 全局最大值
                     grad_mask.flat[argmax_val] = out.grad
                 else:
-                    if isinstance(current_axis, (tuple, list)):
-                        raise NotImplementedError("暂不支持多轴max反向传播")
-                    axis_int = current_axis
+                    if isinstance(current_axis, (tuple,list)):
+                        raise NotImplementedError("not support multiply axis min, by yrq, in core min")
                     
-                    # 确保argmax与grad_mask维度一致
-                    if argmax_val.ndim != grad_mask.ndim:
-                        argmax_val = np.expand_dims(argmax_val, axis=axis_int)
+                    # 手动实现put_along_axis的逻辑
+                    if keepdims:
+                        indices = argmax_val
+                    else:
+                        # 为argmax_val添加被压缩的维度
+                        indices = np.expand_dims(argmax_val, axis=current_axis)
                     
-                    # 使用广播对齐后的out_grad_broad赋值
-                    np.put_along_axis(grad_mask, argmax_val, out_grad_broad, axis=axis_int)
+                    # 手动创建索引并赋值
+                    indices_tuple = []
+                    for i in range(self.data.ndim):
+                        if i == current_axis:
+                            indices_tuple.append(indices)
+                        else:
+                            # 创建广播索引
+                            idx = np.arange(self.data.shape[i])
+                            shape = [1] * self.data.ndim
+                            shape[i] = self.data.shape[i]
+                            idx = idx.reshape(shape)
+                            indices_tuple.append(idx)
+                    
+                    # 确保out.grad的形状与索引选择的形状匹配
+                    selected_shape = indices_tuple[0].shape
+                    if out.grad.size == 1:
+                        # 标量情况
+                        grad_value = out.grad
+                    else:
+                        # 调整out.grad的形状
+                        grad_reshaped = out.grad.reshape(selected_shape)
+                        grad_value = grad_reshaped
+                    
+                    # 使用高级索引赋值
+                    grad_mask[tuple(indices_tuple)] = grad_value
                 
                 self.grad += grad_mask
         
         out._backward = _backward
         out._parents = [self]
         return out
-    
-  
 
-    def min(self,axis=None,keepdims = False)->'Tensor':
-        # out_data = np.min(self.data, axis=axis,keepdims=keepdims)
-        # argmin = np.argmin(self.data, axis=axis, keepdims = keepdims)
-        # out = Tensor(out_data, requires_grad=True)
-        # def _backward():
-        #     if self.requires_grad:
-        #         if self.grad is None:
-        #             self.grad = np.zeros_like(self.data)
-        #         grad_mask = np.zeros_like(self.data)
-        #         np.put_along_axis(grad_mask, argmin, out.grad, axis=axis)
-        #         self.grad += grad_mask
-        # out._backward = _backward
-        # out._parents = [self]
-        # return out
-        current_axis = axis
-        out_data = np.min(self.data, axis=current_axis, keepdims = keepdims)
-        argmin = np.argmin(self.data, axis=current_axis, keepdims=keepdims)
-        out = Tensor(out_data, requires_grad=self.requires_grad)
-        def _backward():
-            # if not self.requires_grad:
-            #     return
-            if self.requires_grad:
-                if self.grad is None:
-                # 构造梯度掩码，最大的位置是oyt.grad,其他的位置是0
-                    self.grad = np.zeros_like(self.data)
-                if current_axis is None:
-                    grad_mask = np.zeros_like(self.data)
-                    grad_mask.flat[argmin] = out.grad
-                    self.grad += grad_mask
-                else:
-                    # 确保axis是整数（多轴max需特殊处理，这里简化为单轴）
-                    if isinstance(current_axis, (tuple, list)):
-                        raise NotImplementedError("don't support the multiplty axis in min, by yrq")
-                    axis_int = current_axis
+    def min(self, axis=None, keepdims=False) -> 'Tensor':
+            current_axis = axis
+            out_data = np.min(self.data, axis=current_axis, keepdims=keepdims)
+            argmin_val = np.argmin(self.data, axis=current_axis, keepdims=keepdims)
+            out = Tensor(out_data, requires_grad=self.requires_grad)
+            
+            def _backward():
+                nonlocal argmin_val, current_axis
+                if self.requires_grad:
+                    if self.grad is None:
+                        self.grad = np.zeros_like(self.data)
                     
-                    # 检查维度匹配（argmax和grad_mask必须同维度）
-                    if argmin.ndim != grad_mask.ndim:
-                        # 扩展argmax维度以匹配grad_mask
-                        argmin_expanded = np.expand_dims(argmin, axis=axis_int)
+                    grad_mask = np.zeros_like(self.data)
+                    
+                    if current_axis is None:
+                        # 全局最小值
+                        grad_mask.flat[argmin_val] = out.grad
                     else:
-                        argmin_expanded = argmin
+                        if isinstance(current_axis, (tuple,list)):
+                            raise NotImplementedError("not support multiply axis min, by yrq, in core min")
+                        # 手动实现put_along_axis的逻辑
+                        if keepdims:
+                            indices = argmin_val
+                        else:
+                            # 为argmin_val添加被压缩的维度
+                            indices = np.expand_dims(argmin_val, axis=current_axis)
+                        
+                        # 手动创建索引并赋值
+                        indices_tuple = []
+                        for i in range(self.data.ndim):
+                            if i == current_axis:
+                                indices_tuple.append(indices)
+                            else:
+                                # 创建广播索引
+                                idx = np.arange(self.data.shape[i])
+                                shape = [1] * self.data.ndim
+                                shape[i] = self.data.shape[i]
+                                idx = idx.reshape(shape)
+                                indices_tuple.append(idx)
+                        
+                        # 确保out.grad的形状与索引选择的形状匹配
+                        selected_shape = indices_tuple[0].shape
+                        if out.grad.size == 1:
+                            # 标量情况
+                            grad_value = out.grad
+                        else:
+                            # 调整out.grad的形状
+                            grad_reshaped = out.grad.reshape(selected_shape)
+                            grad_value = grad_reshaped
+                        
+                        # 使用高级索引赋值
+                        grad_mask[tuple(indices_tuple)] = grad_value
                     
-                    # 确保out.grad的形状与argmax匹配（广播后赋值）
-                    grad_mask = np.zeros_like(self.data)
-                    np.put_along_axis(
-                        grad_mask,
-                        argmin_expanded,
-                        out.grad,
-                        axis=axis_int
-                    )
                     self.grad += grad_mask
-                # grad_mask = np.zeros_like(self.data)
-                # np.put_along_axis(grad_mask, argmax, out.grad, axis=axis)
-                # self.grad += grad_mask
+            
+            out._backward = _backward
+            out._parents = [self]
+            return out
 
-
-
-        out._backward = _backward
-        out._parents = [self]
-        return out
     @property
     def T(self)->'Tensor':
         if self.ndim !=2:
             raise ValueError(f"T only used in 2 dim, the current dim is {self.ndim}")
         return self.transpose(1,0)
 
-
+    # 是python的内置的方法,返回对象占用的内存字节数，和元素个数无关
+    # @property
+    # def __sizeof__(self):
+    #     return self.data.size
+    
+    @property
+    def size(self):
+        return self.data.size
+    
     # ===== 反向传播入口 =====
     def backward(self, grad_output=None): 
     # 内部：拓扑排序 + 链式回调
@@ -567,9 +745,13 @@ class Tensor:
                 topo.append(v)
         build_topo(self)
 
-        if self.grad is None:
-            self.grad = np.zeros_like(self.data)
-        self.grad[:] = grad_output #使用切片赋值保证形状
+        # 存在0-D标量不能使用[:]赋值
+        # if self.grad is None:
+        #     self.grad = np.zeros_like(self.data)
+        # self.grad[:] = grad_output #使用切片赋值保证形状
+        if self.grad is None or self.grad.shape != self.data.shape:
+            self.grad = np.empty_like(self.data) # 首次或者形状变化的时候重新分配
+        np.copyto(self.grad, grad_output) #支持0-D -> N-D广播
 
         for node in reversed(topo):
             node._backward()
@@ -749,10 +931,13 @@ if __name__ == "__main__":
     z = (x * y + x.exp()) / y.mean()
     z.backward(np.array([1.0, 1.0]))
     
-    # 手动计算预期梯度（简化版）
+    
+    n = y.size
     mean_y = y.data.mean()
+    c_sum = (x.data * y.data + np.exp(x.data)).sum()
     dx_expected = (y.data + np.exp(x.data)) / mean_y
-    dy_expected = (x.data / mean_y) - (x.data*y.data + np.exp(x.data)) / (mean_y**2 * 2)
+    dy_expected = (x.data / mean_y) - c_sum / (mean_y**2 * n)
+    
     check_grad(x.grad, dx_expected)
     check_grad(y.grad, dy_expected)
 
