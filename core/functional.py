@@ -419,10 +419,10 @@ if __name__=="__main__":
 
     
     # 运行所有测试
-    # test_activation_functions()
-    # test_softmax()
-    # test_log_softmax()
-    # test_loss_functions()
+    test_activation_functions()
+    test_softmax()
+    test_log_softmax()
+    test_loss_functions()
     test_complex_chain()
     
     print("\n🎉 所有测试通过！")

@@ -5,7 +5,7 @@
 # 之后会从底层搭建强化学习算法等机器学习和深度学习算法
 
 # 项目结构
-
+```tree
 mytorch/                 # 根目录
 ├── core/                # 核心算子（手写梯度）
 │   ├── __init__.py
@@ -27,8 +27,8 @@ mytorch/                 # 根目录
 │   └── mnist.pkl        # 运行脚本自动下载
 └── tests/               # 单元测试（可选）
     └── test_tensor.py
-
-
+```
+```tree
 mytorch/
 ├── core/                          # 手写自动微分引擎
 │   ├── __init__.py               ← 导出 Tensor, functional, optim
@@ -50,9 +50,9 @@ mytorch/
 │   └── mnist.pkl                 ← 阶段 0：自动下载
 └── tests/
     └── test_tensor.py            ← 阶段 0：断言梯度
+```
 
-
-
+```tree
 core/functional.py          ← 追加 conv2d, max_pool2d, col2im 反向
 nn/layer.py                 ← 追加 Conv2d, MaxPool2d, Flatten
 examples/mnist_cnn.py       ← 新脚本：CNN 版
@@ -63,7 +63,7 @@ nn/layer.py                 ← 追加 LSTM, MultiHeadAttention, TransformerBloc
 examples/imdb_lstm.py       ← LSTM 文本分类
 examples/toy_transformer.py ← 单头 Attention 加和实验
 tests/test_rnn.py           ← 梯度/数值双重检查
-
+```
 
 # core
 | 文件              | 一句话作用                                    | 阶段    |

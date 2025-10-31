@@ -24,6 +24,10 @@ class Tensor:
         # 判断是不是需要计算梯度
         return self.grad is not None
 
+    @property
+    def ndim(self):
+        """返回张量的维度数"""
+        return self.data.ndim
     # 优化后的轴计算（__add__ 和 __mul__ 中均适用）
     # def get_broadcast_axes(self, grad_shape, target_shape):
     #     """计算广播新增的轴（需求和的轴）"""
