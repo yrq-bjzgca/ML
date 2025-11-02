@@ -1,9 +1,8 @@
 # core/__init__.py
 
-# ① 核心对象
-from .tensor import Tensor        # 可微张量
-from . import functional          # 算子命名空间（relu, conv2d...）
-from . import optim               # 优化器命名空间（SGD, Adam...）
+# core/__init__.py  （可选扩展）
+from .tensor import Tensor
+from .functional import relu, sigmoid, cross_entropy   # 最常用的算子
+from . import functional, optim
 
-# ② 控制“from core import *”时的白名单
-__all__ = ['Tensor', 'functional', 'optim']
+__all__ = ['Tensor', 'relu', 'sigmoid', 'cross_entropy', 'functional', 'optim']

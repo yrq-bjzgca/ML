@@ -131,3 +131,16 @@ from ML.core.tensor import Tensor
 | 2. 简化深层导入  | `from .tensor import Tensor`<br>`from .optim import SGD` | 用户只需<br>`from ML.core import Tensor, SGD` |
 | 3. 包级初始化逻辑 | `print('ML 0.1.0 ready')`                           | 首次导入包时执行一次                                     |
 | 4. 兼容命名空间  | `import sys`<br>`sys.path.append(...)`                   | 动态把子目录加入搜索路径                                   |
+
+
+# 使用方法
+
+```python
+
+# 1. 仅安装运行时依赖
+pip install -e .
+
+# 2. 连带测试/开发工具一起装
+pip install -e ".[test,dev]"
+
+```

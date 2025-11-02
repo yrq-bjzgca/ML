@@ -1,9 +1,10 @@
-from tensor import Tensor
+from .tensor import Tensor
 import numpy as np
 from typing import List, Union
 import warnings
 
-
+# 当前文件测试的时候取消下面注释
+# from tensor import Tensor
 class Optimizer:
     """
     优化器的基类

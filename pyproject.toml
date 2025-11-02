@@ -1,0 +1,20 @@
+[build-system]
+requires      = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name        = "mytorch"
+version     = "0.1.0"
+description = "手写的迷你深度学习框架"
+readme      = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+dev  = ["black", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["mytorch*"]

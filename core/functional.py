@@ -1,4 +1,8 @@
-from tensor import Tensor
+
+from .tensor import Tensor
+
+# 下面是运行funcional的时候取消注释
+# from tensor import Tensor
 import numpy as np
 
 # ===== 一元激活 =====

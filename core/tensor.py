@@ -1,14 +1,18 @@
 import numpy as np
 from typing import List, Optional, Union, Tuple
-
+import contextlib
 class Tensor:
     """
     手写可微张量
     要求：支持广播、切片、pad；记录计算图；链式反向
     """
+    # 类变量，控制全局梯度计算
+    _grad_enabled = True
+
     def __init__(self, data, requires_grad=False):
         self.data = np.asarray(data, dtype=np.float32)
         self.shape = self.data.shape
+        self.requires_grad = requires_grad and Tensor._grad_enabled
         self.grad = None
         if requires_grad:
             self.grad = np.zeros_like(self.data)
@@ -18,16 +22,75 @@ class Tensor:
     # ---------- 工具 ----------
     def __repr__(self):
         return f"Tensor({self.data}, shape={self.shape}, requires_grad={self.grad is not None})"
+
+    @classmethod
+    @contextlib.contextmanager
+    def no_grad(cls):
+        """
+        上下文管理器，禁用梯度计算
+        
+        用法:
+            with Tensor.no_grad():
+                # 在这个块中创建的张量不会计算梯度
+                x = Tensor([1, 2, 3], requires_grad=True)  # 实际 requires_grad=False
+        """
+        old_state = cls._grad_enabled
+        cls._grad_enabled = False
+        try:
+            yield
+        finally:
+            cls._grad_enabled = old_state
     
-    @property
-    def requires_grad(self):
-        # 判断是不是需要计算梯度
-        return self.grad is not None
+    @classmethod
+    def set_grad_enabled(cls, mode: bool):
+        """
+        设置梯度计算是否启用
+        
+        参数:
+            mode: True 启用梯度计算，False 禁用
+        """
+        cls._grad_enabled = mode
+    
+    @classmethod
+    def is_grad_enabled(cls):
+        """
+        检查梯度计算是否启用
+        
+        返回:
+            bool: 如果启用梯度计算返回 True，否则返回 False
+        """
+        return cls._grad_enabled
+    
+    # @property
+    # def requires_grad(self):
+    #     # 判断是不是需要计算梯度
+    #     return self.grad is not None
 
     @property
     def ndim(self):
         """返回张量的维度数"""
         return self.data.ndim
+    
+
+    def copy(self) -> 'Tensor':
+        """
+        创建当前张量的副本
+        
+        返回:
+            新的 Tensor 对象，包含数据的副本
+        """
+
+        # 复制数据
+        data_copy = self.data.copy()
+
+        # 创建新的tensor
+        new_tensor = Tensor(data_copy, requires_grad=self.requires_grad)
+
+        # 如果原始张量有梯度，也复制梯度
+        if self.grad is not None:
+            new_tensor.grad = self.grad.copy()
+        return new_tensor
+    
     # 优化后的轴计算（__add__ 和 __mul__ 中均适用）
     # def get_broadcast_axes(self, grad_shape, target_shape):
     #     """计算广播新增的轴（需求和的轴）"""
@@ -72,23 +135,11 @@ class Tensor:
             grad_dim = grad_shape[-i]
             target_dim = target_shape[-i]
             if grad_dim != target_dim and target_dim ==1:
-                axes.append(grad_dim - i)
+                axes.append(grad_ndim - i)
         return tuple(axes)
 
     def __add__(self, other:'Tensor')->'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other,requires_grad=False)
-        # 基础版本
-        # out = Tensor(self.data + other.data, requires_grad=True)
-        # # 整理计算图
-        # def _backward(): 
-        #     if self.grad is not None:
-        #         self.grad += out.grad
-        #     if other.grad is not None:
-        #         other.grad += out.grad
-        # out._backward = _backward # 将函数当回存调存起来，只有当函数最终backward的时候才会执行
-        # out._parents = [self, other]
-        # return out
-
         # 带有广播
         a,b  = np.broadcast_arrays(self.data, other.data)
         out = Tensor(a + b, requires_grad=self.requires_grad or other.requires_grad)
@@ -113,9 +164,6 @@ class Tensor:
                 else:
                     #没有需要相加的和
                     self.grad += out.grad
-                # self.grad += out.grad.sum(axis=axes).reshape(self.shape)
-              
-                # self.grad += np.broadcast_to(summed_grad,self.shape)
             
             if other.requires_grad:
                 if other.grad is None:
@@ -137,16 +185,10 @@ class Tensor:
                 else:
                     #没有需要相加的和
                     other.grad += out.grad
-
-                # axis = tuple(range(grad_broadcast.ndim - other.ndim))
-                # other.grad += grad_broadcast.sum(axis=axis).reshape(self.shape)
-                # axes = self.get_broadcast_axes(out.grad.shape, other.shape)
-                # other.grad += out.grad.sum(axis =axes).reshape(other.shape)
-                # summed_grad = out.grad.sum(axis =axes, keepdims =True)
-                # other.grad += np.broadcast_to(summed_grad, other.shape)
         out._backward = _backward
         out._parents = [self, other]
         return out
+    
     # 减法
     def __sub__(self, other:'Tensor')->'Tensor':
         other = other if isinstance(other,Tensor) else Tensor(other)
@@ -282,7 +324,10 @@ class Tensor:
         out._backward = _backward
         out._parents = [self, other]
         return out
-
+    
+    def sqrt(self):
+        return self ** 0.5
+    
     def square(self):
         """
         对self**2 的有好的接口
@@ -582,7 +627,56 @@ class Tensor:
         out._parents = [self]
         return out   
 
+    def var(self, axis=None, keepdims=False, correction=1):
+        """
+        计算张量的方差
+        
+        参数:
+            axis: 沿指定轴计算方差，None 表示计算所有元素的方差
+            keepdims: 是否保持维度
+            correction: 自由度修正，默认为 1 (样本方差)
+                       0 表示总体方差，1 表示无偏估计的样本方差
+        
+        返回:
+            方差张量
+        """
+        # 计算均值
+        mean_value = self.mean(axis=axis,keepdims=True)
+        # 计算平方偏差
+        squarred_diff = (self-mean_value)**2
+
+        # 计算平方偏差的均值
+        if axis is None:
+            # 所有元素的方差
+            n_elements = np.prod(self.shape)
+            variance = squarred_diff.sum()/(n_elements - correction)
+        else:
+            # 指定轴的方差
+            if isinstance(axis, int):
+                axis = (axis, ) # 将单个轴转化为元组，统一处理
+            n_elements = 1
+            for ax in axis:
+                n_elements *= self.shape[ax] # 计算沿着指定轴的元素总数
+            variance = squarred_diff.sum(axis = axis, keepdims = keepdims)/(n_elements - correction)
+        return variance
+
+
     
+    def std(self, axis=None, keepdims=False, correction=1):
+        """
+        计算张量的标准差
+        
+        参数:
+            axis: 沿指定轴计算标准差，None 表示计算所有元素的标准差
+            keepdims: 是否保持维度
+            correction: 自由度修正，默认为 1 (样本标准差)
+        
+        返回:
+            标准差张量
+        """
+        variance = self.var(axis=axis, keepdims=keepdims, correction=correction)
+        return variance ** 0.5
+
     def zero_grad(self):
         if self.grad is not None:
             self.grad.fill(0.0) #原地清零，比创建一个数组更加的高效
@@ -865,6 +959,55 @@ if __name__ == "__main__":
     expected_grad = np.ones((2, 2)) * (1/2)  # 平均梯度
     check_grad(a.grad, expected_grad)
     a.zero_grad()
+
+    print("Testing no_grad context manager...")
+    # 正常情况
+    x1 = Tensor([1, 2, 3], requires_grad=True)
+    assert x1.requires_grad == True, "正常情况 requires_grad 应该为 True"
+    
+    # 在 no_grad 上下文中
+    with Tensor.no_grad():
+        x2 = Tensor([1, 2, 3], requires_grad=True)
+        assert x2.requires_grad == False, "no_grad 中 requires_grad 应该为 False"
+        
+        # 检查全局状态
+        assert Tensor.is_grad_enabled() == False, "no_grad 中全局状态应该为 False"
+    
+    # 离开 no_grad 后恢复
+    assert Tensor.is_grad_enabled() == True, "离开 no_grad 后全局状态应该恢复"
+    
+    x3 = Tensor([1, 2, 3], requires_grad=True)
+    assert x3.requires_grad == True, "离开 no_grad 后 requires_grad 应该恢复"
+    
+
+  
+    # 创建测试张量
+    x = Tensor([[1, 2, 3], [4, 5, 6]], requires_grad=True)
+    
+    # 测试均值
+    mean_all = x.mean()
+    assert np.allclose(mean_all.data, 3.5), "全局均值计算错误"
+    
+    mean_axis0 = x.mean(axis=0)
+    assert np.allclose(mean_axis0.data, [2.5, 3.5, 4.5]), "沿轴0均值计算错误"
+    
+    mean_axis1 = x.mean(axis=1)
+    assert np.allclose(mean_axis1.data, [2, 5]), "沿轴1均值计算错误"
+    
+    # 测试方差
+    var_all = x.var()
+    expected_var = np.var([[1, 2, 3], [4, 5, 6]], ddof=1)  # 样本方差
+    assert np.allclose(var_all.data, expected_var), "全局方差计算错误"
+    
+    var_axis0 = x.var(axis=0)
+    expected_var_axis0 = np.var([[1, 2, 3], [4, 5, 6]], axis=0, ddof=1)
+    assert np.allclose(var_axis0.data, expected_var_axis0), "沿轴0方差计算错误"
+    
+    # 测试标准差
+    std_all = x.std()
+    expected_std = np.std([[1, 2, 3], [4, 5, 6]], ddof=1)
+    assert np.allclose(std_all.data, expected_std), "全局标准差计算错误"
+    
 
     print("===== 6. 形状操作测试（reshape、transpose、expand_dims） =====")
     # 测试reshape
