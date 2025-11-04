@@ -373,7 +373,7 @@ def kaiming_uniform_(tensor: Tensor, a: float = 0, mode: str = 'fan_in', nonline
 
     # 生成均匀分布的数据
     uniform_data = np.random.uniform(-bound , bound, tensor.shape)
-    
+
     print(f"DEBUG: 初始化数据范围: [{uniform_data.min():.6f}, {uniform_data.max():.6f}]")  # 添加调试
 
     # 更新张量数据

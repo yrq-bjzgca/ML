@@ -138,20 +138,29 @@ def log_softmax(x: Tensor, axis=-1) -> Tensor:
     exp_x = x_stable.exp()
     sum_exp = exp_x.sum(axis = axis, keepdims = True)
     # ln(softmax) = x − ln(sum_exp)
-    log_sum_exp = (sum_exp + 1e-12).log() #补充tensor的log函数
+    log_sum_exp = sum_exp.log() #补充tensor的log函数
     out = x_stable - log_sum_exp #需要使用广播减法
     # ∂L/∂x = ∂L/∂y ⊙ (1 − exp(y))  (y = log_softmax(x))
     def _backward():
-        if x.grad is not None:
+        if x.requires_grad:
+            if x.grad is None:
+                x.grad = np.zeros_like(x.data)
+
             grad_out = out.grad #(N,C)
             exp_out = np.exp(out.data) #(N,C)
             # 对类别轴求和，保持维度
-            sum_grad = (grad_out * exp_out).sum(axis=axis, keepdims=True)  #(N,1)
-            x.grad += grad_out - exp_out * sum_grad # 使用广播乘法
+            # ∂L/∂x = ∂L/∂y - softmax(x) * sum(∂L/∂y)
+            sum_grad = grad_out.sum(axis=axis, keepdims=True)  #(N,1)
+            x_grad = grad_out - exp_out * sum_grad # 使用广播乘法
+
+            if x.grad is None:
+                x.grad = np.zeros_like(x.data)
+            x.grad += x_grad
     out._backward = _backward
     out._parents = [x]
 
     return out
+
 
 # ===== 损失 =====
 
@@ -210,8 +219,8 @@ def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     log_p = log_softmax(logits, axis= -1)
 
     # 添加数值检查
-    print(f"DEBUG cross_entropy: logits范围=[{logits.data.min():.4f}, {logits.data.max():.4f}]")
-    print(f"DEBUG: log_p范围=[{log_p.data.min():.4f}, {log_p.data.max():.4f}]")
+    # print(f"DEBUG cross_entropy: logits范围=[{logits.data.min():.4f}, {logits.data.max():.4f}]")
+    # print(f"DEBUG: log_p范围=[{log_p.data.min():.4f}, {log_p.data.max():.4f}]")
     
     return nll_loss(log_p, targets=targets)
 

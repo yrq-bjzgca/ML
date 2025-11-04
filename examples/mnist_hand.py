@@ -32,7 +32,7 @@ def load_csv(path, samples=None):
     return X, y
 
 BATCH = 64
-EPOCHS = 5          # 先跑 5 个 epoch 看看
+EPOCHS = 100          # 先跑 5 个 epoch 看看
 LR     = 0.01
 
 

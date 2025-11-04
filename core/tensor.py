@@ -414,8 +414,8 @@ class Tensor:
                     self.grad = np.zeros_like(self.data)
                 grad_broad = out.grad @ other.data.swapaxes(-1,-2)
 
-                print(f"DEBUG matmul grad: self.shape={self.shape}, other.shape={other.shape}")
-                print(f"DEBUG: out.grad.shape={out.grad.shape}, grad_broad.shape={grad_broad.shape}")
+                # print(f"DEBUG matmul grad: self.shape={self.shape}, other.shape={other.shape}")
+                # print(f"DEBUG: out.grad.shape={out.grad.shape}, grad_broad.shape={grad_broad.shape}")
                 
                 if grad_broad.shape != self.shape:
                     # axis = tuple(range(grad_broad.ndim - self.ndim))
