@@ -6,7 +6,7 @@ from .tensor import Tensor
 import numpy as np
 
 # ===== 一元激活 =====
-def relu(x: Tensor) -> Tensor:
+def relu(x: Tensor, inplace=False) -> Tensor:
     """
     前向：out = max(0, x)
     反向：∂L/∂x = ∂L/∂out ⊙ (x>0)
@@ -16,6 +16,8 @@ def relu(x: Tensor) -> Tensor:
         3. 实现 _backward 回调，完成梯度回传
     """
     out_data = np.maximum(0, x.data)
+    if inplace:
+        return out_data
     out = Tensor(out_data, requires_grad=True)
     def _backward():
         if x.grad is not None:
@@ -24,7 +26,7 @@ def relu(x: Tensor) -> Tensor:
     out._parents = [x]
     return out
 
-def sigmoid(x: Tensor) -> Tensor:
+def sigmoid(x: Tensor, inplace=False) -> Tensor:
     """
     Sigmoid(x)=1/(1+e^(-x))
     反向：dL/dx = sigmoid(x)*(1-sigmoid(x))
@@ -36,8 +38,10 @@ def sigmoid(x: Tensor) -> Tensor:
     # ∂out/∂x 使用numpy广播实现
     # out = sigmoid(x)
     # ∂L/∂x = ∂L/∂out *∂out/∂x = out.grad * sigmoid(x)*(1-sigmoid(x))
-
+    
     out_data = 1/(1+np.exp(-x.data))
+    if inplace:
+        return out_data
     out = Tensor(out_data, requires_grad=True)
     def _backward():
         if x.grad is not None:
@@ -46,11 +50,13 @@ def sigmoid(x: Tensor) -> Tensor:
     out._parents = [x]
     return out
     
-def tanh(x: Tensor) -> Tensor: 
+def tanh(x: Tensor, inplace=False) -> Tensor: 
     """
     tanh(x) = (e^(x)-e^(-x))/(e^(x)+e^(-x))
     """
     out_data = (np.exp(x.data)-np.exp(-x.data))/(np.exp(x.data)+np.exp(-x.data))
+    if inplace:
+        return out_data
     out = Tensor(out_data, requires_grad=True)
     # out = tanh(x)
     # ∂L/∂x = ∂L/∂out *∂out/∂x = out.grad * (1-tanh^2(x))
@@ -132,7 +138,7 @@ def log_softmax(x: Tensor, axis=-1) -> Tensor:
     exp_x = x_stable.exp()
     sum_exp = exp_x.sum(axis = axis, keepdims = True)
     # ln(softmax) = x − ln(sum_exp)
-    log_sum_exp = sum_exp.log() #补充tensor的log函数
+    log_sum_exp = (sum_exp + 1e-12).log() #补充tensor的log函数
     out = x_stable - log_sum_exp #需要使用广播减法
     # ∂L/∂x = ∂L/∂y ⊙ (1 − exp(y))  (y = log_softmax(x))
     def _backward():
@@ -202,6 +208,11 @@ def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     # out._parents = [logits, targets]
     # return out
     log_p = log_softmax(logits, axis= -1)
+
+    # 添加数值检查
+    print(f"DEBUG cross_entropy: logits范围=[{logits.data.min():.4f}, {logits.data.max():.4f}]")
+    print(f"DEBUG: log_p范围=[{log_p.data.min():.4f}, {log_p.data.max():.4f}]")
+    
     return nll_loss(log_p, targets=targets)
 
 def mse_loss(pred: Tensor, target: Tensor) -> Tensor:

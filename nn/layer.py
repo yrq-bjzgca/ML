@@ -15,10 +15,11 @@ from core import Tensor
 from core import functional as F
 
 
-from init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
+from .init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
+from .base import Module
 import pdb
 
-class Linear:
+class Linear(Module):
     """
     全连接层
     实现 y = xW^T + b 的线性变换
@@ -45,6 +46,9 @@ class Linear:
         # 使用合适的初始化方法初始化self.weight
         # 如果bias为True，初始化self.bias
         # 注册参数以便优化器可以找到它们
+
+        super().__init__() #必须使用父类进行初始化
+
         if in_features <= 0:
             raise ValueError(f"in_feature must be positive integer, but is {in_features}")
         if out_features <= 0:
@@ -58,25 +62,38 @@ class Linear:
             np.empty((out_features,in_features),dtype=np.float32),
             requires_grad = True
         )
-        kaiming_uniform_(self.weight, nonlinearity='relu')
-
+      
+        self.register_parameter('weight', self.weight)
         # 初始化偏置参数
         if bias:
             self.bias_param = Tensor(
                 np.empty(out_features, dtype=np.float32),
                 requires_grad=True
             )
-            zeros_(self.bias_param)
+     
+            self.register_parameter('bias', self.bias_param)
         else:
             self.bias_param =None
 
+        self.reset_parameters()
+
+    def register_parameter(self, name: str, tensor: Tensor) -> None:
+        """
+        安全地注册参数
+        
+        参数:
+            name: 参数名称
+            tensor: 参数张量
+        """
+        if not isinstance(tensor,Tensor):
+            raise TypeError(f"parameter must be Tensor, but get the {type(tensor)}")
+        if not tensor.requires_grad:
+            raise ValueError("register parameter must need grad")
+        # 获取_parameter
+        _parameter = object.__getattribute__(self, '_parameters')
         # 注册参数
-        self._parameters = {}
-        self._parameters['weight'] = self.weight
-        if self.bias_param is not None:
-            self._parameters['bias'] = self.bias_param
-
-
+        _parameter[name] = tensor
+        object.__setattr__(self, name, tensor)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -148,13 +165,13 @@ class Linear:
         """
         重新初始化参数
         """
-        kaiming_uniform_(self.weight, nonlinearity='relu')
+        kaiming_uniform_(self.weight,a = np.sqrt(5), nonlinearity='relu')
 
         # 重新初始化偏置
         if self.bias_param is not None:
             zeros_(self.bias_param)
 
-class Dropout:
+class Dropout(Module):
     """
     Dropout层
     在训练期间随机将部分输入元素置零，防止过拟合
@@ -170,6 +187,7 @@ class Dropout:
         # TODO: 初始化参数
         # 设置dropout概率
         # 初始化训练模式标志
+        super().__init__() #必须使用父类进行初始化
         if p < 0 or p > 1:
             raise ValueError(f"Dropout possibility must be [0,1], but the value is {p}") 
         self.p = p
@@ -248,7 +266,7 @@ class Dropout:
     def __repr__(self) -> str:
         return f"Dropout({self.extra_repr()})"
 
-class BatchNorm1d:
+class BatchNorm1d(Module):
     """
     一维批归一化层
     对小型批量的数据进行归一化
@@ -270,6 +288,7 @@ class BatchNorm1d:
         # 初始化可学习的缩放和偏移参数
         # 初始化运行均值和方差
         # 设置其他超参数
+        super.__init__() #必须调用
         if num_features <=0:
             raise ValueError(f"num_feature must be postive num, but the num is {num_features}")
         if eps<0:
@@ -315,6 +334,7 @@ class BatchNorm1d:
         self.current_val = None
         # 评估/训练模式
         self.training = True
+        self.reset_parameters()
     def forward(self, x: Tensor) -> Tensor:
         """
         前向传播
@@ -455,7 +475,7 @@ class BatchNorm1d:
     def __repr__(self) -> str:
         return f"BatchNorm1d({self.extra_repr()})"
     
-class BatchNorm2d:
+class BatchNorm2d(Module):
     """
     二维批归一化层
     用于卷积层的批归一化
@@ -477,6 +497,7 @@ class BatchNorm2d:
         # 初始化可学习的缩放和偏移参数
         # 初始化运行均值和方差
         # 设置其他超参数
+        super.__init__() 
         if num_features <=0:
             raise ValueError(f"num_feature must be postive num, but the num is {num_features}")
         if eps<0:
@@ -523,6 +544,7 @@ class BatchNorm2d:
         # 评估/训练模式
         self.training = True
 
+        self.reset_parameters()
     
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -651,8 +673,132 @@ class BatchNorm2d:
     def __repr__(self) -> str:
         return f"BatchNorm2d({self.extra_repr()})"
 
+
+class ReLU(Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+        self.mask = None  # 保存激活掩码，用于反向传播
+
+    def forward(self, x:Tensor)->Tensor:
+        """
+        前向传播
+        
+        参数:
+            x: 输入张量
+            
+        返回:
+            输出张量
+        """
+        return F.relu(x, inplace=self.inplace)
+    
+    def __call__(self, x: Tensor) -> Tensor:
+        """使实例可调用"""
+        return self.forward(x)
+    
+    def parameters(self):
+        """
+        ReLU 层没有可训练参数
+        
+        返回:
+            空列表
+        """
+        return []
+    
+    def extra_repr(self) -> str:
+        """
+        返回层的额外描述信息，用于 __repr__
+        """
+        return f'inplace={self.inplace}'
+    
+    def __repr__(self) -> str:
+        return f'ReLU({self.extra_repr()})'
+
+class Sigmoid(Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+        self.mask = None  # 保存激活掩码，用于反向传播
+
+    def forward(self, x:Tensor)->Tensor:
+        """
+        前向传播
+        
+        参数:
+            x: 输入张量
+            
+        返回:
+            输出张量
+        """
+        return F.sigmoid(x, inplace=self.inplace)
+    
+    def __call__(self, x: Tensor) -> Tensor:
+        """使实例可调用"""
+        return self.forward(x)
+    
+    def parameters(self):
+        """
+        ReLU 层没有可训练参数
+        
+        返回:
+            空列表
+        """
+        return []
+    
+    def extra_repr(self) -> str:
+        """
+        返回层的额外描述信息，用于 __repr__
+        """
+        return f'inplace={self.inplace}'
+    
+    def __repr__(self) -> str:
+        return f'Sigmoid({self.extra_repr()})'
+    
+class Tanh(Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+        self.mask = None  # 保存激活掩码，用于反向传播
+
+    def forward(self, x:Tensor)->Tensor:
+        """
+        前向传播
+        
+        参数:
+            x: 输入张量
+            
+        返回:
+            输出张量
+        """
+        return F.tanh(x, inplace=self.inplace)
+    
+    def __call__(self, x: Tensor) -> Tensor:
+        """使实例可调用"""
+        return self.forward(x)
+    
+    def parameters(self):
+        """
+        ReLU 层没有可训练参数
+        
+        返回:
+            空列表
+        """
+        return []
+    
+    def extra_repr(self) -> str:
+        """
+        返回层的额外描述信息，用于 __repr__
+        """
+        return f'inplace={self.inplace}'
+    
+    def __repr__(self) -> str:
+        return f'tanh({self.extra_repr()})'
+
+class LeakyReLU(Module):
+    pass
+
 if __name__ == "__main__":
-    """
+  
     print("Linear 层测试")
     print("=" * 50)
     
@@ -834,8 +980,7 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 50)
     print("所有 Dropout 层测试通过！🎉")
-    """
-
+   
     print("BatchNorm 层测试")
     print("=" * 50)
     

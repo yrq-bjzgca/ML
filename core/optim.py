@@ -18,7 +18,8 @@ class Optimizer:
             params: 需要优化的参数列表
             lr: 学习率
         """
-        self.params = params
+        # self.params = params
+        self.params = list(params)
         self.lr = lr
         
         # 鲁棒性检查
@@ -123,7 +124,7 @@ class Optimizer:
             return False
         return True
     
-    def _clip_if_large(self, array: np.ndarray, threshold: float = 1e6) -> np.ndarray:
+    def _clip_if_large(self, array: np.ndarray, threshold: float = 1e3) -> np.ndarray:
         """
         如果数组值过大则进行裁剪
         
@@ -178,6 +179,7 @@ class SGD(Optimizer):
             
             if not self._check_numerical_stability(grad, f"the param {i} grad"):
                 continue
+            
 
             # 获取速度
             velocity = self.state[f'velocity_{i}']
@@ -185,7 +187,7 @@ class SGD(Optimizer):
             # 更新动量
             velocity = self.momentum * velocity - self.lr * grad
             velocity = self._clip_if_large(velocity)
-            
+
             # 保存更新后的速度
             self.state[f'velocity_{i}'] = velocity
             

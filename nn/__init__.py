@@ -8,7 +8,11 @@ from .layer import (
     Linear,
     Dropout,
     BatchNorm1d,
-    BatchNorm2d
+    BatchNorm2d,
+    ReLU,           # 新增
+    Sigmoid,        # 新增  
+    Tanh,           # 新增
+    LeakyReLU       # 新增
 )
 
 # 从 model 模块导入模型类
@@ -38,6 +42,11 @@ __all__ = [
     'BatchNorm1d',
     'BatchNorm2d',
     
+    'ReLU',         # 新增
+    'Sigmoid',      # 新增
+    'Tanh',         # 新增
+    'LeakyReLU',    # 新增
+
     # 模型类
     'Module',
     'Sequential',
