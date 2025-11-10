@@ -12,7 +12,11 @@ from .layer import (
     ReLU,           # 新增
     Sigmoid,        # 新增  
     Tanh,           # 新增
-    LeakyReLU       # 新增
+    LeakyReLU,       # 新增
+    # 新增CNN层
+    Conv2d,
+    MaxPool2d,
+    Flatten
 )
 
 # 从 model 模块导入模型类
@@ -41,7 +45,12 @@ __all__ = [
     'Dropout', 
     'BatchNorm1d',
     'BatchNorm2d',
-    
+
+    'Conv2d',
+    'MaxPool2d', 
+    'Flatten',
+
+
     'ReLU',         # 新增
     'Sigmoid',      # 新增
     'Tanh',         # 新增

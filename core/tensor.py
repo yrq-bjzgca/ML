@@ -532,6 +532,10 @@ class Tensor:
     #         (1, 1))   # 第 1 轴（列）: 前(左) 1，后(右) 1
     # 复制算子： 块求和还原
     def pad(self, pad_width, mode='constant', constant_values=0)->'Tensor': 
+        """
+        增强的pad操作，支持4D张量
+        pad_width: ((前batch, 后batch), (前通道, 后通道), (前高, 后高), (前宽, 后宽))
+        """
         out_data = np.pad(self.data, pad_width, mode = mode, constant_values = constant_values)
         out = Tensor(out_data, requires_grad=self.requires_grad)
         def _backward():
@@ -1046,6 +1050,45 @@ if __name__ == "__main__":
     c.backward(np.ones((4, 4)))
     check_grad(a.grad, np.ones((2, 2)))  # 中间区域梯度为1
     a.zero_grad()
+
+    print("=== 测试4D张量填充 ===")
+    
+    # 创建4D张量 (batch, channels, height, width)
+    x = Tensor(np.ones((2, 3, 4, 4)), requires_grad=True)
+    print(f"原始形状: {x.shape}")
+    
+    # 4D填充: ((batch前, batch后), (通道前, 通道后), (高度前, 高度后), (宽度前, 宽度后))
+    pad_width = ((0, 0), (0, 0), (1, 1), (1, 1))  # 在高度和宽度上各填充1
+    
+    # 应用填充
+    x_padded = x.pad(pad_width)
+    print(f"填充后形状: {x_padded.shape}")
+    
+    # 验证形状
+    expected_shape = (2, 3, 6, 6)  # 4+1+1=6, 4+1+1=6
+    assert x_padded.shape == expected_shape, f"期望 {expected_shape}, 实际 {x_padded.shape}"
+    print("✓ 形状正确")
+    
+    # 验证填充值
+    # 中间区域应该是原始数据，边界应该是0
+    center_region = x_padded.data[:, :, 1:5, 1:5]  # 去除边界
+    assert np.allclose(center_region, 1.0), "中心区域值不正确"
+    print("✓ 填充值正确")
+    
+    # 测试梯度传播
+    loss = x_padded.sum()
+    loss.backward()
+    
+    # 检查梯度形状
+    assert x.grad.shape == x.shape, "梯度形状不正确"
+    print("✓ 梯度形状正确")
+    
+    # 检查梯度值 - 应该只有中心区域有梯度
+    expected_grad = np.ones((2, 3, 4, 4))
+    assert np.allclose(x.grad, expected_grad), "梯度值不正确"
+    print("✓ 梯度值正确")
+    
+    print("🎉 4D填充测试全部通过！")
 
     print("===== 8. 重复操作测试（repeat） =====")
     a = Tensor([[1.0, 2.0]], requires_grad=True)

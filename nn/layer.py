@@ -15,8 +15,8 @@ from core import Tensor
 from core import functional as F
 
 
-from .init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
-from .base import Module
+from init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
+from base import Module
 import pdb
 
 class Linear(Module):
@@ -288,7 +288,7 @@ class BatchNorm1d(Module):
         # 初始化可学习的缩放和偏移参数
         # 初始化运行均值和方差
         # 设置其他超参数
-        super.__init__() #必须调用
+        super().__init__() #必须使用父类进行初始化
         if num_features <=0:
             raise ValueError(f"num_feature must be postive num, but the num is {num_features}")
         if eps<0:
@@ -308,10 +308,12 @@ class BatchNorm1d(Module):
                 np.ones(num_features, dtype=np.float32),
                 requires_grad= True
             )
+            self.register_parameter('weight', self.weight)
             self.bias = Tensor(
                 np.zeros(num_features,dtype=np.float32),
                 requires_grad=True
             )
+            self.register_parameter('bias', self.bias)
         else:
             self.weight = None
             self.bias = None
@@ -322,19 +324,43 @@ class BatchNorm1d(Module):
                 np.zeros(num_features,dtype=np.float32),
                 requires_grad=False
             )
+     
             self.running_var = Tensor(
                 np.ones(num_features,dtype=np.float32),
                 requires_grad=False
             )
+      
         else:
             self.running_mean = None
             self.running_var = None
+
+
         # 当前的统计量（训练）
         self.current_mean = None
         self.current_val = None
         # 评估/训练模式
         self.training = True
+
         self.reset_parameters()
+
+    def register_parameter(self, name: str, tensor: Tensor) -> None:
+        """
+        安全地注册参数
+        
+        参数:
+            name: 参数名称
+            tensor: 参数张量
+        """
+        if not isinstance(tensor,Tensor):
+            raise TypeError(f"parameter must be Tensor, but get the {type(tensor)}")
+        if not tensor.requires_grad:
+            raise ValueError("register parameter must need grad")
+        # 获取_parameter
+        _parameter = object.__getattribute__(self, '_parameters')
+        # 注册参数
+        _parameter[name] = tensor
+        object.__setattr__(self, name, tensor)
+
     def forward(self, x: Tensor) -> Tensor:
         """
         前向传播
@@ -797,6 +823,118 @@ class Tanh(Module):
 class LeakyReLU(Module):
     pass
 
+class Conv2d(Module):
+    """
+    2D卷积层
+    """
+    
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size if isinstance(kernel_size,tuple) else (kernel_size,kernel_size)
+        self.stride = stride if isinstance(stride,tuple) else (stride,stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding)
+        self.bias = bias
+        # 初始化卷积核权重
+        self.weight = Tensor(
+            np.random.randn(out_channels,in_channels,self.kernel_size[0],self.kernel_size[1]),
+            requires_grad=True
+        )
+        # 初始化偏置
+        if bias:
+            self.bias_param = Tensor(
+                np.zeros(out_channels),
+                requires_grad=True
+            )
+        else:
+            self.bias_param = None
+        self.reset_parameters()
+
+    def forward(self, x:Tensor)->Tensor:
+        """
+        前向传播
+        
+        参数:
+            x: 输入张量
+            
+        返回:
+            输出张量
+        """
+        return F.conv2d(x, self.weight, self.bias_param, self.stride, self.padding)
+    
+    def reset_parameters(self):
+        kaiming_uniform_(self.weight ,nonlinearity='relu')
+        if self.bias_param is not None:
+            zeros_(self.bias_param)
+
+    def extra_repr(self) -> str:
+        """
+        返回层的额外描述信息，用于 __repr__
+        """
+        return (f"in_channels={self.in_channels},out_channels={self.out_channels},kernel_size={self.kernel_size}\
+                stride={self.stride},padding={self.padding},bias={self.bias}")
+    
+    def __repr__(self) -> str:
+        return f'conv2d({self.extra_repr()})'
+
+class MaxPool2d(Module):
+    def __init__(self, kernel_size=2, stride=None, padding=0):
+        super().__init__()
+        self.kernel_size = kernel_size if isinstance(kernel_size,tuple) else (kernel_size,kernel_size)
+        self.stride = stride if stride is not None else kernel_size
+        self.stride = self.stride if isinstance(self.stride,tuple) else (self.stride,self.stride) 
+        self.padding = padding if isinstance(padding,tuple) else (padding, padding)
+    def forward(self, x):
+        """
+        调用functional的函数
+        """
+        return F.max_pool2d(x,self.kernel_size,self.stride,self.padding)
+    def extra_repr(self)->str:
+        return f"kernel_size={self.kernel_size},stride={self.stride},padding={self.padding}"
+class Flatten(Module):
+    """
+    展平层
+    """
+    def __init__(self, start_dim=1, end_dim=-1):
+        super().__init__()
+        self.start_dim = start_dim 
+        self.end_dim = end_dim
+        self.input_shape = None
+    def forward(self, x:Tensor)->Tensor:
+        """
+        前向传播
+        """
+        self.input_shape = x.shape
+        # 计算展平之后的形状
+        if self.end_dim == -1:
+            self.end_dim  = len(x.shape) -1
+
+        # 展平维度
+        new_shape =list(x.shape[:self.start_dim])
+        flattened_size = 1
+        for i in range(self.start_dim, self.end_dim + 1):
+            flattened_size *= x.shape[i]
+        new_shape.append(flattened_size)
+        if self.end_dim<len(x.shape)-1:
+            new_shape.extend(x.shape[self.end_dim+1:])
+
+        out = x.reshape(*new_shape)
+        def _backward():
+            if x.requires_grad:
+                grad_out = out.grad
+                grad_x = grad_out.reshape(self.input_shape)
+                if x.grad is None:
+                    x.grad = np.zeros_like(x.data)
+                x.grad +=grad_x
+        out._backward = _backward
+        out._parents = [x]
+        return out
+    
+    def extra_repr(self)->str:
+        return f"start_dim={self.start_dim}, end_dim={self.end_dim}"
+
+
 if __name__ == "__main__":
   
     print("Linear 层测试")
@@ -1109,3 +1247,88 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 50)
     print("所有 BatchNorm 层测试通过！🎉")
+
+
+    print("\n=== CNN层测试 ===")
+    
+    # 测试Conv2d
+    print("1. Conv2d测试")
+    conv = Conv2d(1, 3, kernel_size=3, padding=1)
+    x = Tensor(np.random.randn(2, 1, 5, 5) * 0.1, requires_grad=True)
+    y = conv(x)
+    print(f"输入形状: {x.shape}")
+    print(f"输出形状: {y.shape}")
+    
+    # 测试梯度
+    loss = y.sum()
+    loss.backward()
+    print(f"权重梯度形状: {conv.weight.grad.shape}")
+    if conv.bias_param:
+        print(f"偏置梯度形状: {conv.bias_param.grad.shape}")
+    print("✓ Conv2d测试通过")
+    
+    # 测试MaxPool2d
+    print("\n2. MaxPool2d测试")
+    pool = MaxPool2d(2)
+    x_pool = Tensor(np.random.randn(2, 3, 4, 4) * 0.1, requires_grad=True)
+    y_pool = pool(x_pool)
+    print(f"输入形状: {x_pool.shape}")
+    print(f"输出形状: {y_pool.shape}")
+    
+    loss_pool = y_pool.sum()
+    loss_pool.backward()
+    print("✓ MaxPool2d测试通过")
+    
+    # 测试Flatten
+    print("\n3. Flatten测试")
+    flatten = Flatten()
+    x_flat = Tensor(np.random.randn(2, 3, 4, 4) * 0.1, requires_grad=True)
+    y_flat = flatten(x_flat)
+    print(f"输入形状: {x_flat.shape}")
+    print(f"输出形状: {y_flat.shape}")
+    
+    loss_flat = y_flat.sum()
+    loss_flat.backward()
+    print("✓ Flatten测试通过")
+
+    print("=== 测试CNN层 ===")
+        
+    # 测试Conv2d
+    print("1. Conv2d测试")
+    conv = Conv2d(1, 3, kernel_size=3, padding=1)
+    x = Tensor(np.random.randn(2, 1, 5, 5) * 0.1, requires_grad=True)
+    y = conv(x)
+    print(f"输入形状: {x.shape}")
+    print(f"输出形状: {y.shape}")
+    
+    # 测试梯度
+    loss = y.sum()
+    loss.backward()
+    print(f"权重梯度形状: {conv.weight.grad.shape}")
+    if conv.bias_param:
+        print(f"偏置梯度形状: {conv.bias_param.grad.shape}")
+    print("✓ Conv2d测试通过")
+    
+    # 测试MaxPool2d
+    print("\n2. MaxPool2d测试")
+    pool = MaxPool2d(2)
+    x_pool = Tensor(np.random.randn(2, 3, 4, 4) * 0.1, requires_grad=True)
+    y_pool = pool(x_pool)
+    print(f"输入形状: {x_pool.shape}")
+    print(f"输出形状: {y_pool.shape}")
+    
+    loss_pool = y_pool.sum()
+    loss_pool.backward()
+    print("✓ MaxPool2d测试通过")
+    
+    # 测试Flatten
+    print("\n3. Flatten测试")
+    flatten = Flatten()
+    x_flat = Tensor(np.random.randn(2, 3, 4, 4) * 0.1, requires_grad=True)
+    y_flat = flatten(x_flat)
+    print(f"输入形状: {x_flat.shape}")
+    print(f"输出形状: {y_flat.shape}")
+    
+    loss_flat = y_flat.sum()
+    loss_flat.backward()
+    print("✓ Flatten测试通过")

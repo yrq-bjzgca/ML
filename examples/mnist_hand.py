@@ -46,7 +46,7 @@ def accuracy(logits, labels):
 
 # ---------- 训练 ----------
 model = MLP()
-opt   = optim.SGD(model.parameters(), lr=LR)
+opt   = optim.Adam(model.parameters(), lr=LR)
 
 steps = 10 
 for epoch in range(EPOCHS):
