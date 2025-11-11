@@ -15,8 +15,8 @@ from core import Tensor
 from core import functional as F
 
 
-from init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
-from base import Module
+from .init import kaiming_normal_, zeros_, kaiming_uniform_, ones_
+from .base import Module
 import pdb
 
 class Linear(Module):
@@ -308,12 +308,12 @@ class BatchNorm1d(Module):
                 np.ones(num_features, dtype=np.float32),
                 requires_grad= True
             )
-            self.register_parameter('weight', self.weight)
+            # self.register_parameter('weight', self.weight)
             self.bias = Tensor(
                 np.zeros(num_features,dtype=np.float32),
                 requires_grad=True
             )
-            self.register_parameter('bias', self.bias)
+            # self.register_parameter('bias', self.bias)
         else:
             self.weight = None
             self.bias = None
@@ -335,9 +335,13 @@ class BatchNorm1d(Module):
             self.running_var = None
 
 
-        # 当前的统计量（训练）
-        self.current_mean = None
-        self.current_val = None
+        
+        # 确保正确初始化 current_mean 和 current_var
+        object.__setattr__(self, 'current_mean', None)
+        object.__setattr__(self, 'current_val', None)
+        
+        # self.current_mean = None
+        # self.current_val = None
         # 评估/训练模式
         self.training = True
 
@@ -398,8 +402,28 @@ class BatchNorm1d(Module):
         # 如果在评估模式，使用运行统计量
         # 应用归一化： (x - mean) / sqrt(var + eps)
         # 应用缩放和偏移： gamma * normalized_x + beta
-        self.current_mean = x.mean(axis=axes, keepdims = True)
-        self.current_val = x.var(axis = axes, keepdims = True)
+
+        # self.current_mean = x.mean(axis=axes, keepdims = True)
+        # self.current_val = x.var(axis = axes, keepdims = True)
+
+        # 计算当前批次的均值和方差
+        mean_result = x.mean(axis=axes, keepdims=True)
+        var_result = x.var(axis=axes, keepdims=True)
+        
+        # 确保我们得到了有效的Tensor对象
+        if not isinstance(mean_result, Tensor):
+            raise TypeError(f"Expected Tensor, got {type(mean_result)}")
+        
+        # 使用object.__setattr__直接设置属性，避免__setattr__的干扰
+        object.__setattr__(self, 'current_mean', mean_result)
+        object.__setattr__(self, 'current_val', var_result)
+        
+        # 验证赋值是否成功
+        current_mean_check = object.__getattribute__(self, 'current_mean')
+        if current_mean_check is None:
+            raise ValueError("Failed to assign current_mean")
+        
+        # print(f"DEBUG: Successfully assigned current_mean: {type(current_mean_check)}, {current_mean_check.shape}")
 
         # 更新计算统计量
         if self.track_running_stats:
@@ -523,7 +547,7 @@ class BatchNorm2d(Module):
         # 初始化可学习的缩放和偏移参数
         # 初始化运行均值和方差
         # 设置其他超参数
-        super.__init__() 
+        super().__init__()
         if num_features <=0:
             raise ValueError(f"num_feature must be postive num, but the num is {num_features}")
         if eps<0:
@@ -565,8 +589,10 @@ class BatchNorm2d(Module):
             self.running_mean = None
             self.running_var = None
         # 当前的统计量（训练）
-        self.current_mean = None
-        self.current_val = None
+        # self.current_mean = None
+        # self.current_val = None
+        object.__setattr__(self, 'current_mean', None)
+        object.__setattr__(self, 'current_val', None)
         # 评估/训练模式
         self.training = True
 
@@ -605,9 +631,25 @@ class BatchNorm2d(Module):
         """
         计算当前的批次的均值和方差，训练模式前向传播
         """
-        self.current_mean = x.mean(axis=axes, keepdims = True)
-        self.current_val = x.var(axis = axes, keepdims = True)
-
+        # self.current_mean = x.mean(axis=axes, keepdims = True)
+        # self.current_val = x.var(axis = axes, keepdims = True)
+        # 计算当前批次的均值和方差
+        mean_result = x.mean(axis=axes, keepdims=True)
+        var_result = x.var(axis=axes, keepdims=True)
+        
+        # 确保我们得到了有效的Tensor对象
+        if not isinstance(mean_result, Tensor):
+            raise TypeError(f"Expected Tensor, got {type(mean_result)}")
+        
+        # 使用object.__setattr__直接设置属性，避免__setattr__的干扰
+        object.__setattr__(self, 'current_mean', mean_result)
+        object.__setattr__(self, 'current_val', var_result)
+        
+        # 验证赋值是否成功
+        current_mean_check = object.__getattribute__(self, 'current_mean')
+        if current_mean_check is None:
+            raise ValueError("Failed to assign current_mean")
+        
         # 更新计算统计量
         if self.track_running_stats:
             with Tensor.no_grad():# 运行统计量不参与梯度运算

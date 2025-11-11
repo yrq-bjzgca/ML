@@ -271,12 +271,13 @@ def conv2d(x: Tensor, weight: Tensor, bias: Tensor = None, stride=1, padding=0) 
     # 形状：(in_channels * kH * kW, batch_size * out_h * out_w)
     cols = _im2col(x_padded.data, kH, kW, stride, out_h, out_w)
     # 5.重塑权重进行矩阵乘法
-    weight_flat = weight.data.reshape(out_channels, -1)
+    weight_flat = weight.data.reshape(out_channels, -1) # (out_channels, in_channels * kH * kW)
     # 6.执行卷积
-    out_data = weight_flat@cols
+    out_data = weight_flat@cols# (out_channels, batch_size * out_h * out_w)
     # 7.重塑输出
     out_data = out_data.reshape(out_channels, batch_size, out_h,out_w)
-    out_data = out_data.transpose(1,0,2,3)
+    out_data = out_data.transpose(1,0,2,3)# (batch_size, out_channels, out_h, out_w)
+    
     # 8.添加偏置
     if bias is not None:
         out_data += bias.data.reshape(1,-1,1,1)
@@ -285,31 +286,35 @@ def conv2d(x: Tensor, weight: Tensor, bias: Tensor = None, stride=1, padding=0) 
     # 9.保存中间结果进行反向传播
     def _backward():
         if x.requires_grad or weight.requires_grad or (bias and bias.requires_grad):
-            grad_out = out.grad
+            grad_out = out.grad # (batch_size, out_channels, out_h, out_w)
             # 重塑梯度以便得到矩阵
-            grad_out_reshape = grad_out.transpose(1,0,2,3)
-            grad_out_flat = grad_out_reshape.reshape(out_channels, -1)
+            grad_out_reshape = grad_out.transpose(1,0,2,3) # (out_channels, batch_size, out_h, out_w)
+            grad_out_flat = grad_out_reshape.reshape(out_channels, -1) # (out_channels, batch_size * out_h * out_w)
             # 计算梯度权重
             if weight.requires_grad:
                 # dL/dW = dL/dout * cols^T
-                grad_weight_flat = grad_out_flat@cols.T
+                print(f"cols: min={cols.min()}, max={cols.max()}, mean={cols.mean()}")
+                grad_weight_flat = grad_out_flat@cols.T # (out_channels, in_channels * kH * kW)
+                print(f"grad_weight_flat: min={grad_weight_flat.min()}, max={grad_weight_flat.max()}, mean={grad_weight_flat.mean()}")
                 grad_weight = grad_weight_flat.reshape(weight.shape)
                 if weight.grad is None:
                     weight.grad = np.zeros_like(weight.data)
-                weight.data += grad_weight
-
+                weight.grad += grad_weight
+                print(f"weight.grad: min={weight.grad.min()}, max={weight.grad.max()}, mean={weight.grad.mean()}")
+            # 计算梯度偏置
             if bias and bias.requires_grad:
                 # dL/db = sum(dL/dout, axis=(0, 2, 3))
                 grad_bias = grad_out_flat.sum(axis=1)
                 if bias.grad is None:
                     bias.grad = np.zeros_like(bias.data)
                 bias.grad += grad_bias
+                print(f"bias.grad: min={bias.grad.min()}, max={bias.grad.max()}, mean={bias.grad.mean()}")
 
             # 计算输入梯度
             if x.requires_grad:
                 # dL/dx = W^T * dL/dout 然后 col2im
-                weight_flat = weight.data.reshape(out_channels, -1)
-                grad_cols = weight_flat.T @ grad_out_flat
+                weight_flat = weight.data.reshape(out_channels, -1) # (out_channels, in_channels * kH * kW)
+                grad_cols = weight_flat.T @ grad_out_flat # (in_channels * kH * kW, batch_size * out_h * out_w)
 
                 # 将列转化为图像格式
                 grad_x_padded = _col2im(grad_cols, x_padded.shape, kH ,kW, stride, out_h, out_w)
@@ -356,7 +361,8 @@ def _col2im(cols, x_shape, kH, kW, stride, out_h, out_w):
     """
     batch_size, in_channels, padded_h, padded_w = x_shape
     sH, sW = stride
-    dx = np.zeros((batch_size, in_channels, padded_h, padded_w))
+    # dx = np.zeros((batch_size, in_channels, padded_h, padded_w))
+    dx = np.zeros(x_shape, dtype=cols.dtype)
     col_idx = 0
     for b in range(batch_size):
         for i in range(out_h):

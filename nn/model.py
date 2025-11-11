@@ -105,7 +105,7 @@ class Sequential(Module):
     
     def __repr__(self) -> str:
         """返回Sequential的字符串表示"""
-        modules_str = ', '.join([repr(module) for module in self._modules.values()])
+        modules_str = ', \n'.join([repr(module) for module in self._modules.values()])
         return f"Sequential({modules_str})"
     
 
