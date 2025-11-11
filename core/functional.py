@@ -293,14 +293,14 @@ def conv2d(x: Tensor, weight: Tensor, bias: Tensor = None, stride=1, padding=0) 
             # 计算梯度权重
             if weight.requires_grad:
                 # dL/dW = dL/dout * cols^T
-                print(f"cols: min={cols.min()}, max={cols.max()}, mean={cols.mean()}")
+                # print(f"cols: min={cols.min()}, max={cols.max()}, mean={cols.mean()}")
                 grad_weight_flat = grad_out_flat@cols.T # (out_channels, in_channels * kH * kW)
-                print(f"grad_weight_flat: min={grad_weight_flat.min()}, max={grad_weight_flat.max()}, mean={grad_weight_flat.mean()}")
+                # print(f"grad_weight_flat: min={grad_weight_flat.min()}, max={grad_weight_flat.max()}, mean={grad_weight_flat.mean()}")
                 grad_weight = grad_weight_flat.reshape(weight.shape)
                 if weight.grad is None:
                     weight.grad = np.zeros_like(weight.data)
                 weight.grad += grad_weight
-                print(f"weight.grad: min={weight.grad.min()}, max={weight.grad.max()}, mean={weight.grad.mean()}")
+                # print(f"weight.grad: min={weight.grad.min()}, max={weight.grad.max()}, mean={weight.grad.mean()}")
             # 计算梯度偏置
             if bias and bias.requires_grad:
                 # dL/db = sum(dL/dout, axis=(0, 2, 3))
@@ -308,7 +308,7 @@ def conv2d(x: Tensor, weight: Tensor, bias: Tensor = None, stride=1, padding=0) 
                 if bias.grad is None:
                     bias.grad = np.zeros_like(bias.data)
                 bias.grad += grad_bias
-                print(f"bias.grad: min={bias.grad.min()}, max={bias.grad.max()}, mean={bias.grad.mean()}")
+                # print(f"bias.grad: min={bias.grad.min()}, max={bias.grad.max()}, mean={bias.grad.mean()}")
 
             # 计算输入梯度
             if x.requires_grad:
