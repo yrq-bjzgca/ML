@@ -1,5 +1,5 @@
 
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional, Tuple, Callable, List  # 添加 
 
 import sys
 sys.path.append("..")
@@ -21,6 +21,7 @@ class Module:
         object.__setattr__(self, '_modules', {})
         object.__setattr__(self, '_parameters', {})
         object.__setattr__(self, 'training', True)
+        object.__setattr__(self, '_forward_hooks', []) 
     
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -105,7 +106,7 @@ class Module:
         # TODO: 返回直接子模块迭代器
         yield self
         _modules = object.__getattribute__(self, '_modules')
-        for module in _modules.value():
+        for module in _modules.values():
             yield module
 
     def modules(self) -> Iterator['Module']:
@@ -167,7 +168,36 @@ class Module:
             if param.grad is not None:
                 param.grad.fill(0.0)
    
-    
+    def register_forward_hook(self, hook: Callable[['Module', Tuple[Tensor, ...], Tensor], Optional[Tensor]]) -> Callable:
+        """
+        注册前向传播hook
+        
+        参数:
+            hook: 钩子函数，签名为 hook(module, input, output) -> None 或新output
+                - module: 当前模块
+                - input: 输入元组 (Tensor,)
+                - output: 模块输出
+        
+        返回:
+            钩子函数本身，可用于后续移除
+        """
+        _forward_hooks = object.__getattribute__(self, '_forward_hooks')
+        _forward_hooks.append(hook)
+        return hook
+
+    def remove_forward_hook(self, hook: Callable) -> None:
+        """
+        移除已注册的前向hook
+        
+        参数:
+            hook: 要移除的钩子函数
+        """
+        _forward_hook = object.__getattribute__(self, '_forward_hooks')
+        if hook in _forward_hook:
+            _forward_hook.remove(hook)
+        else:
+            raise ValueError("Hook not found in the module's forward hooks")
+
     def __setattr__(self, name: str, value) -> None:
         """
         设置属性
@@ -190,7 +220,18 @@ class Module:
         # 正常设置属性
         else:
             object.__setattr__(self, name, value)
-    
+
+    def __call__(self, x:Tensor)->Tensor:
+        """实例可以调用"""
+        output = self.forward(x)
+        # 触发向前hook
+        _forward_hooks = object.__getattribute__(self, '_forward_hooks')
+        for hook in _forward_hooks:
+            result = hook(self,(x),output)
+            if result is not None:
+                output = result
+        return output
+
     def __getattr__(self, name: str):
         """
         获取属性
@@ -217,8 +258,8 @@ class Module:
             # return self._parameters[name]
             return _parameters[name]
         else:
-            raise AttributeError(f"'{type(self).__name__}' object has no\
-                                 attribute '{name}'")
+            raise AttributeError(f"'{type(self).__name__}' object has no "\
+                                 "attribute '{name}'")
 
     def __repr__(self) -> str:
         """
@@ -328,3 +369,25 @@ class Module:
                 raise RuntimeError(f"missing : {missing_keys}")
             if unexpected_keys:
                 raise RuntimeError(f"unexpect : {unexpected_keys}")
+    def named_modules(self, prefix: str = '') -> Iterator[Tuple[str, 'Module']]:
+        """
+        返回所有模块的迭代器（包括自身），包含名称前缀
+        
+        参数:
+            prefix: 名称前缀
+            
+        返回:
+            (名称, 模块) 元组的迭代器
+        """
+        # 首先返回自身
+        yield prefix,self
+        # 递归遍历所有子块
+        _modules = object.__getattribute__(self, '_modules')
+        for name, module in _modules.items():
+            # 构建子模块的完全名称路径
+            if prefix:
+                submodule_prefix = f"{prefix}.{name}"
+            else:
+                submodule_prefix = name
+            # 递归获得子模块的所有嵌套模块
+            yield from module.named_modules(submodule_prefix)

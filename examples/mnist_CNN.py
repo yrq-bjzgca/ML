@@ -122,20 +122,3 @@ for epoch in range(EPOCHS):
 
 print("训练完成!")
 
-# ---------- 测试模型（可选） ----------
-# def test_model(model, X_test, y_test, num_samples=1000):
-#     """在测试集上评估模型"""
-#     model.eval()  # 设置为评估模式
-    
-#     # 随机选择测试样本
-#     idx = np.random.randint(0, len(X_test), num_samples)
-#     x_test = Tensor(X_test[idx])
-#     y_test_tensor = Tensor(y_test[idx])
-    
-#     # 前向传播（不计算梯度）
-#     with Tensor.no_grad():
-#         logits = model(x_test)
-#         test_acc = accuracy(logits, y_test_tensor)
-    
-#     model.train()  # 恢复训练模式
-#     return test_acc

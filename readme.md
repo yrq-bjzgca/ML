@@ -28,43 +28,6 @@ mytorch/                 # 根目录
 └── tests/               # 单元测试（可选）
     └── test_tensor.py
 ```
-```tree
-mytorch/
-├── core/                          # 手写自动微分引擎
-│   ├── __init__.py               ← 导出 Tensor, functional, optim
-│   ├── tensor.py                 ← 阶段 0：最小可微张量 + 链式梯度
-│   ├── functional.py             ← 阶段 0：relu/sigmoid/cross_entropy
-│   └── optim.py                  ← 阶段 0：SGD & Momentum
-├── nn/                            # 网络积木（无依赖注入，可插拔）
-│   ├── __init__.py               ← 导出 Linear / Sequential / ...
-│   ├── layer.py                  ← 阶段 0：Linear、Dropout
-│   ├── model.py                  ← 阶段 0：Sequential 容器
-│   └── init.py                   ← 阶段 0：Xavier/He 初始化
-├── energy/                        # 吸能试验田（今天可空）
-│   ├── __init__.py
-│   ├── regularize.py             ← 阶段 0：空或 L2 正则
-│   └── monitor.py                ← 阶段 0：空
-├── examples/
-│   └── mnist_fc.py               ← 阶段 0：端到端训练脚本
-├── data/                          # 数据集缓存
-│   └── mnist.pkl                 ← 阶段 0：自动下载
-└── tests/
-    └── test_tensor.py            ← 阶段 0：断言梯度
-```
-
-```tree
-core/functional.py          ← 追加 conv2d, max_pool2d, col2im 反向
-nn/layer.py                 ← 追加 Conv2d, MaxPool2d, Flatten
-examples/mnist_cnn.py       ← 新脚本：CNN 版
-tests/test_layer.py         ← 断言 conv 梯度
-
-core/functional.py          ← 追加 lstm_cell, softmax, matmul_mask
-nn/layer.py                 ← 追加 LSTM, MultiHeadAttention, TransformerBlock
-examples/imdb_lstm.py       ← LSTM 文本分类
-examples/toy_transformer.py ← 单头 Attention 加和实验
-tests/test_rnn.py           ← 梯度/数值双重检查
-```
-
 # core
 | 文件              | 一句话作用                                    | 阶段    |
 | --------------- | ---------------------------------------- | ----- |
@@ -95,20 +58,7 @@ tests/test_rnn.py           ← 梯度/数值双重检查
 
 
 
-# test
-| 文件               | 一句话作用       | 阶段  |
-| ---------------- | ----------- | --- |
-| `test_tensor.py` | 梯度数值校验      | 0   |
-| `test_layer.py`  | conv/rnn 梯度 | 1→2 |
 
-| Week | 目标                 | 交付物                                  | 是否破坏老代码 |
-| ---- | ------------------ | ------------------------------------ | ------- |
-| W1   | 全连通跑通MNIST         | 阶段0全部文件                              | ❌       |
-| W2   | 手写conv2d+im2col    | functional.py+layer.py+mnist\_cnn.py | ❌       |
-| W3   | 能量正则FLOPCount      | energy/regularize.py                 | ❌       |
-| W4   | LSTMCell+IMDB      | functional.py+lstm层+imdb\_lstm.py    | ❌       |
-| W5   | MultiHeadAttention | layer.py+toy\_transformer.py         | ❌       |
-| W6   | 并行训练卡加速            | 可选：cpp\_extension写CUDA               | ❌       |
 
 
 
@@ -144,3 +94,104 @@ pip install -e .
 pip install -e ".[test,dev]"
 
 ```
+
+自编码器（Autoencoder）：包括去噪自编码器、变分自编码器（VAE）等，用于无监督学习。
+
+生成对抗网络（GAN）：包括DCGAN、WGAN等，用于生成模型。
+
+残差网络（ResNet）：解决深度网络退化问题，可以用于图像分类。
+
+注意力机制（Attention）：除了Transformer中的自注意力，还有各种注意力变体，如通道注意力、空间注意力等。
+
+图神经网络（GNN）：如图卷积网络（GCN）、图注意力网络（GAT）等，用于图结构数据。
+
+强化学习算法：如DQN、Policy Gradients、Actor-Critic等，可以放在强化学习目录下。
+
+归一化层：如BatchNorm、LayerNorm、InstanceNorm、GroupNorm等，这些已经在CNN中常见，但可以扩展到其他网络。
+
+循环神经网络变体：如GRU（Gated Recurrent Unit），是LSTM的简化版。
+
+胶囊网络（Capsule Network）：一种新的图像识别网络，旨在解决CNN的不足。
+
+神经ODE：基于常微分方程的神经网络。
+
+
+1. ResNet (残差网络)
+# 核心：跳跃连接 + 残差块
+class ResidualBlock:
+    def __init__(self, in_channels, out_channels, stride=1):
+        self.conv1 = Conv2d(in_channels, out_channels, 3, stride, 1)
+        self.bn1 = BatchNorm2d(out_channels)
+        self.conv2 = Conv2d(out_channels, out_channels, 3, 1, 1)
+        self.bn2 = BatchNorm2d(out_channels)
+        
+        # 捷径连接
+        self.shortcut = Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = Sequential(
+                Conv2d(in_channels, out_channels, 1, stride),
+                BatchNorm2d(out_channels)
+            )
+
+2. U-Net (编码器-解码器)
+class UNet:
+    def __init__(self):
+        # 编码器 (下采样)
+        self.enc1 = ConvBlock(3, 64)
+        self.enc2 = ConvBlock(64, 128)
+        # 解码器 (上采样 + 跳跃连接)
+        self.dec1 = UpConvBlock(128, 64)
+
+3. VAE (变分自编码器)
+class VAE:
+    def __init__(self):
+        self.encoder = Sequential(...)
+        self.fc_mu = Linear(hidden_dim, latent_dim)    # 均值
+        self.fc_logvar = Linear(hidden_dim, latent_dim) # 对数方差
+        self.decoder = Sequential(...)
+
+
+4. GAN (生成对抗网络)
+
+class Generator:
+    """从噪声生成假数据"""
+    def __init__(self):
+        self.fc1 = Linear(100, 256)
+        self.fc2 = Linear(256, 784)  # MNIST 28x28
+
+class Discriminator:
+    """区分真假数据"""
+    def __init__(self):
+        self.fc1 = Linear(784, 256)
+        self.fc2 = Linear(256, 1)
+
+5. Attention-based CNN (SENet, CBAM)
+class SEBlock:
+    """通道注意力"""
+    def __init__(self, channel, reduction=16):
+        self.gap = AdaptiveAvgPool2d(1)  # 全局平均池化
+        self.fc = Sequential(
+            Linear(channel, channel // reduction),
+            Linear(channel // reduction, channel)
+        )
+
+6. Lightweight CNN
+MobileNet (深度可分离卷积)
+
+ShuffleNet (通道混洗)
+
+SqueezeNet (Fire Module)
+
+7.. AutoML相关
+NASCell (神经架构搜索单元)
+
+DARTS (可微分架构搜索)
+
+
+
+场景	推荐网络	特点
+图像分类	ResNet, EfficientNet	深度/宽度/分辨率缩放
+目标检测	YOLO, SSD	单阶段检测器
+语义分割	U-Net, DeepLab	编码器-解码器结构
+生成模型	VAE, GAN, Diffusion	概率建模/对抗训练
+轻量化	MobileNet, ShuffleNet	移动端部署
