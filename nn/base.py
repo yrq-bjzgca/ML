@@ -380,7 +380,7 @@ class Module:
             (名称, 模块) 元组的迭代器
         """
         # 首先返回自身
-        yield prefix,self
+        yield prefix, self
         # 递归遍历所有子块
         _modules = object.__getattribute__(self, '_modules')
         for name, module in _modules.items():
@@ -388,6 +388,6 @@ class Module:
             if prefix:
                 submodule_prefix = f"{prefix}.{name}"
             else:
-                submodule_prefix = name
+                submodule_prefix = f"layer_{name}_{type(module).__name__}"
             # 递归获得子模块的所有嵌套模块
             yield from module.named_modules(submodule_prefix)

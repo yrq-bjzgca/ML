@@ -247,7 +247,7 @@ def test_pruning_edge_cases():
     
     # 测试全零权重
     zero_model = Sequential(Linear(5, 3))
-    zero_model.layers[0].weight.data = np.zeros((5, 3))
+    zero_model.layers['0'].weight.data = np.zeros((5, 3))
     
     masks = pruner.prune_model(zero_model)
     assert len(masks) == 1, "Should handle zero weights"
@@ -258,7 +258,7 @@ def test_pruning_edge_cases():
     
     # 测试无能量监控器的情况
     normal_model = Sequential(Linear(10, 5))
-    normal_model.layers[0].weight.data = np.random.randn(10, 5)
+    normal_model.layers['0'].weight.data = np.random.randn(10, 5)
     
     masks_no_monitor = pruner.prune_model(normal_model)  # 不传递monitor
     assert len(masks_no_monitor) > 0, "Should work without energy monitor"

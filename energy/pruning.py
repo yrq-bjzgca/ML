@@ -67,20 +67,9 @@ class EnergyAwarePruner:
         # 计算总体稀疏度
         overall_sparsity = total_pruned / total_params if total_params > 0 else 0
         
-        print(f"Pruning completed: {overall_sparsity:.2%} parameters pruned")
+        # print(f"Pruning completed: {overall_sparsity:.2%} parameters pruned")
         return masks
     
-    # def _get_prunable_parameters(self, model) -> List[Tuple[str, Tensor]]:
-    #     """获取可剪枝的参数"""
-    #     parameters = []
-        
-    #     for name, module in model.named_modules():
-    #         if hasattr(module, 'weight') and module.weight is not None:
-    #             # 只剪枝2D或4D的权重（Linear和Conv2d）
-    #             if len(module.weight.shape) in [2, 4]:
-    #                 parameters.append((f"{name}.weight", module.weight))
-        
-    #     return parameters
     
     def _get_prunable_parameters(self, model) -> List[Tuple[str, Tensor]]:
         """获取可剪枝的参数"""
@@ -88,18 +77,20 @@ class EnergyAwarePruner:
         
         for name, module in model.named_modules():
             if hasattr(module, 'weight') and module.weight is not None:
-                # 只剪枝2D或4D的权重（Linear和Conv2d）
-                if len(module.weight.shape) in [2, 4]:
-                    # 对于Linear层，返回转置视图以便与计算逻辑一致
-                    if hasattr(module, 'in_features'):  # 是Linear层
-                        # 返回权重转置视图，形状为 (in_features, out_features)
+                weight_shape = module.weight.shape
+                # print(f"DEBUG: Layer {name}, weight shape = {weight_shape}, type = {type(module.weight)}")
+                
+                if len(weight_shape) in [2, 4]:
+                    if hasattr(module, 'in_features'):  # Linear层
                         weight_transpose = module.weight.transpose()
                         parameters.append((f"{name}.weight_T", weight_transpose))
+                        # print(f"DEBUG: Added transposed Linear weight: {weight_transpose.shape}")
                     else:
                         parameters.append((f"{name}.weight", module.weight))
+                        # print(f"DEBUG: Added Conv weight: {module.weight.shape}")
         
         return parameters
-    
+
     def _compute_energy_importance(self, param_name: str, param: Tensor, 
                                  energy_monitor) -> float:
         """计算基于能量的重要性分数"""
@@ -269,12 +260,42 @@ class StructuredEnergyPruner(EnergyAwarePruner):
             pruner = MagnitudeEnergyPruner(target_sparsity)
             return pruner.compute_mask(weight, target_sparsity)
     
+
+
     def _channel_wise_pruning(self, weight_data: np.ndarray, 
                             target_sparsity: float) -> np.ndarray:
         """通道级剪枝（针对卷积层）"""
-        # 计算每个通道的重要性（L2范数）
-        channel_importance = np.linalg.norm(weight_data, axis=(1, 2, 3))
+        # ===== 关键调试 =====
+        # print(f"DEBUG: weight_data type = {type(weight_data)}")
+        # print(f"DEBUG: weight_data.shape = {weight_data.shape}")
+        # print(f"DEBUG: weight_data.ndim = {weight_data.ndim}")
+        # print(f"DEBUG: Is numpy array? {isinstance(weight_data, np.ndarray)}")
+        # =====================
         
+        # 维度安全检查
+        if weight_data.ndim != 4:
+            print(f"WARNING: Expected 4D weight for channel pruning, got {weight_data.ndim}D shape {weight_data.shape}")
+            print("Falling back to unstructured pruning")
+            pruner = MagnitudeEnergyPruner(
+                sparsity_target=target_sparsity, 
+                energy_aware=self.energy_aware
+            )
+            temp_tensor = Tensor(weight_data)
+            return pruner.compute_mask(temp_tensor, target_sparsity)
+        
+        # try:
+        #     channel_importance = np.linalg.norm(weight_data, axis=(1, 2, 3))
+        # except ValueError as e:
+        #     print(f"ERROR: np.linalg.norm failed with weight shape {weight_data.shape}")
+        #     print(f"Detailed error: {e}")
+        #     raise  # Re-raise to see full traceback
+
+        # 将最后三个维度展平，计算每个通道的L2范数
+        original_shape = weight_data.shape
+        reshaped_weight = weight_data.reshape(original_shape[0], -1)  # 形状变为 (16, 27)
+        channel_importance = np.linalg.norm(reshaped_weight, axis=1)  # 结果形状 (16,)
+        # =======================
+
         # 计算阈值
         threshold = np.percentile(channel_importance, target_sparsity * 100)
         
@@ -288,7 +309,7 @@ class StructuredEnergyPruner(EnergyAwarePruner):
                 mask[i, :, :, :] = 0
                 
         return mask
-    
+
     def _column_wise_pruning(self, weight_data: np.ndarray, 
                            target_sparsity: float) -> np.ndarray:
         """列级剪枝（针对全连接层）"""
@@ -328,7 +349,7 @@ class ProgressiveEnergyPruner:
     def prune_step(self, model, energy_monitor=None):
         """执行一步渐进式剪枝"""
         if self.current_step >= self.steps:
-            print("Progressive pruning completed")
+            # print("Progressive pruning completed")
             return None
             
         # 计算当前步的目标稀疏度
@@ -343,8 +364,8 @@ class ProgressiveEnergyPruner:
         self.pruners.append(pruner)
         self.current_step += 1
         
-        print(f"Progressive pruning step {self.current_step}/{self.steps}, "
-              f"sparsity: {current_sparsity:.2%}")
+        # print(f"Progressive pruning step {self.current_step}/{self.steps}, "
+        #       f"sparsity: {current_sparsity:.2%}")
         
         return masks
     

@@ -10,7 +10,8 @@ import random
 import time
 from typing import List, Dict, Any, Tuple, Optional, Callable
 from abc import ABC, abstractmethod
-from nn.model import Module
+from nn.model import Module, Sequential
+from nn.layer import Linear, Conv2d, ReLU
 
 class EnergyAwareNAS:
     """能量感知的神经架构搜索 - 将能量作为NAS的奖励"""
@@ -152,10 +153,6 @@ class EnergyAwareNAS:
     
     def _create_model_from_config(self, config: Dict[str, Any]) -> Module:
         """根据配置创建模型"""
-        # 这里需要根据你的模型结构来实现
-        # 简化版本，返回一个基本模型
-        from ..nn.layer import Linear, Conv2d, ReLU
-        from ..nn.model import Sequential
         
         layers = []
         for i, layer_config in enumerate(config.get('layers', [])):
